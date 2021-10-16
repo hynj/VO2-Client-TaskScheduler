@@ -66,7 +66,7 @@ float flowTime;
 float flow100;
 int flowCount = 0;
 
-float flowArray[5] = {0, 0, 0, 0, 0};
+float flowArray[3] = {0, 0, 0};
 int flowAdderCounter = 0;
 
 int counts;
@@ -243,12 +243,12 @@ void flowCallback(){
 void flowAdder(){
   flowCount = millis() - flowTime;
   flow100 = flowTotal / flowCount;
-  flowAdderCounter++;
-  flowTime= millis(); 
-  flowTotal = 0;
 
   flowArray[flowAdderCounter] = flow100;
+  flowAdderCounter++;
 
+  flowTime= millis(); 
+  flowTotal = 0;
 };
 
 void readO2Callback(){
@@ -309,7 +309,14 @@ void sendBLECallback(){
     byte *ob = (byte *)&oxygen;
     byte *cb = (byte *)&co2;
     int pb = (int)pressure; 
-    //byte *fb = (byte *)&flowTotal;
+    byte *fb = (byte *)&flowArray[0];
+    byte *fb1 = (byte *)&flowArray[1];
+    byte *fb2 = (byte *)&flowArray[2];
+
+    for (int i = 0; i < 3; i++) {
+      flowArray[i] = 0;
+    }
+    flowAdderCounter = 0;
 
     //Serial.println(flowArray[0]);
     //Serial.println(flowArray[1]);
@@ -332,37 +339,31 @@ void sendBLECallback(){
     value[7] = cb[3];
 
     //Set up Pressure int16
-    value[8] = (pb >> 8) & 0xFF;
-    value[9] = pb & 0xFF;
+    //value[8] = (pb >> 8) & 0xFF;
+    //value[9] = pb & 0xFF;
 
     //Set up Temp int16
-    value[10] = (byte)temp;
+    //value[10] = (byte)temp;
 
     //Set up hum
-    value[11] = (byte)hum;
-    
-    //Set up flow
-    value[12] = 0;
-    value[13] = 0;
-    value[14] = 0;
-    value[15] = 0;
+    //value[11] = (byte)hum;
+
+    value[8] = fb[0];
+    value[9] = fb[1];
+    value[10] = fb[2];
+    value[11] = fb[3];
+
+
+    value[12] = fb1[0];
+    value[13] = fb1[1];
+    value[14] = fb1[2];
+    value[15] = fb1[3];
 
     //Set up second flow
-    value[16] = 0;
-    value[17] = 0;
-    value[18] = 0;
-    value[19] = 0;
-
-    //value[12] = fb[0];
-    //value[13] = fb[1];
-    //value[14] = fb[2];
-    //value[15] = fb[3];
-
-    //Set up second flow
-    //value[16] = fb[0];
-    //value[17] = fb[1];
-    //value[18] = fb[2];
-    //value[19] = fb[3];
+    value[16] = fb2[0];
+    value[17] = fb2[1];
+    value[18] = fb2[2];
+    value[19] = fb2[3];
 
 
    if (deviceConnected) {
