@@ -15,7 +15,7 @@
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define CHARACTERISTIC_UUID1 "b0e7c0af-a557-4f13-84df-9b7b713ee81d"
-
+#define CHARACTERISTIC_UUID2 "02738e9d-282b-4ba3-b951-46b14c37ab4b"
 
 boolean newData = false;
 const byte numChars = 44;
@@ -48,15 +48,17 @@ void sendBLECallback();
 void sendSensorData();
 void flowCallback();
 void flowAdder();
+void sendPressureTemp();
 
 //Tasks
 Task t1(10, TASK_FOREVER, &readO2Callback);
 Task t2(10, TASK_FOREVER, &readCO2Callback);
 Task t3(2000, TASK_FOREVER, &readHMECallback);
 Task t4(5000, TASK_FOREVER, &sendSensorData);
-Task t5(250, TASK_FOREVER, &sendBLECallback);
+Task t5(301, TASK_FOREVER, &sendBLECallback);
 Task t6(1, TASK_FOREVER, &flowCallback);
 Task t7(100, TASK_FOREVER, &flowAdder);
+Task t8(2500, TASK_FOREVER, &sendPressureTemp);
 
 Scheduler runner;
 
@@ -88,10 +90,12 @@ float scale = 140.0; // Scale factor for Air and N2 is 140.0, O2 is 142.8
 BLEServer* pServer = NULL;
 BLECharacteristic* pCharacteristic = NULL;
 BLECharacteristic* pCharacteristic1 = NULL;
+BLECharacteristic* pCharacteristic2 = NULL;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 //uint32_t value = 0;
 uint8_t value[20];
+uint8_t presTempVal[5];
 
 
 float get_flow();
@@ -158,11 +162,21 @@ void setupBLE()
                       BLECharacteristic::PROPERTY_NOTIFY
                     );
 
+  pCharacteristic2 = pService->createCharacteristic(
+                      CHARACTERISTIC_UUID2,
+                      BLECharacteristic::PROPERTY_READ   |
+                      BLECharacteristic::PROPERTY_WRITE  |
+                      BLECharacteristic::PROPERTY_NOTIFY
+                    );
+
+
   // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
   // Create a BLE Descriptor
   pCharacteristic->addDescriptor(new BLE2902());
   
   pCharacteristic1->addDescriptor(new BLE2902());
+  
+  pCharacteristic2->addDescriptor(new BLE2902());
 
   pCharacteristic1->setCallbacks(new MyCallbacks());
 
@@ -243,10 +257,15 @@ void flowCallback(){
 void flowAdder(){
   flowCount = millis() - flowTime;
   flow100 = flowTotal / flowCount;
-
-  flowArray[flowAdderCounter] = flow100;
-  flowAdderCounter++;
-
+  if (flowAdderCounter < 3){
+    flowArray[flowAdderCounter] = flow100;
+    flowAdderCounter++;
+  }
+  else
+  {
+    Serial.println("Flow Array overfill");
+  }
+  
   flowTime= millis(); 
   flowTotal = 0;
 };
@@ -302,13 +321,34 @@ void readO2Callback(){
 }
 void sendSensorData(){
   printSensors();
-  Serial.println(flowCount);
-  Serial.println(flow100);
+  //Serial.println(flowCount);
+  //Serial.println(flow100);
+};
+void sendPressureTemp() {
+  int pb = (int)pressure;
+
+  //Set up Pressure int16
+  presTempVal[0] = (pb >> 8) & 0xFF;
+  presTempVal[1] = pb & 0xFF;
+
+  //Set up Temp int16
+  presTempVal[2] = (byte)temp;
+
+  //Set up hum
+  presTempVal[3] = (byte)hum;
+
+  presTempVal[4] = 0;
+
+  if (deviceConnected) {
+        pCharacteristic2->setValue((uint8_t*)&presTempVal, 5);
+        pCharacteristic2->notify();
+        //value++; // bluetooth stack will go into congestion, if too many packets are sent, in 6 hours test i was able to go as low as 3ms
+    }
 };
 void sendBLECallback(){
     byte *ob = (byte *)&oxygen;
     byte *cb = (byte *)&co2;
-    int pb = (int)pressure; 
+     
     byte *fb = (byte *)&flowArray[0];
     byte *fb1 = (byte *)&flowArray[1];
     byte *fb2 = (byte *)&flowArray[2];
@@ -492,6 +532,7 @@ void setup() {
   runner.addTask(t5);
   runner.addTask(t6);
   runner.addTask(t7);
+  runner.addTask(t8);
 
   t1.enable();
   t2.enable();
@@ -507,6 +548,7 @@ void setup() {
   t5.enable();
   t6.enable();
   t7.enable();
+  t8.enable();
 }
 
 void loop() {
