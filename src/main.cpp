@@ -33,6 +33,7 @@ int toknum1 = 0;
 float co2;
 float hum;
 
+int flowCounter;
 
 const unsigned int MAX_INPUT = 16;
 
@@ -55,8 +56,8 @@ Task t1(10, TASK_FOREVER, &readO2Callback);
 Task t2(10, TASK_FOREVER, &readCO2Callback);
 Task t3(2000, TASK_FOREVER, &readHMECallback);
 Task t4(5000, TASK_FOREVER, &sendSensorData);
-Task t5(301, TASK_FOREVER, &sendBLECallback);
-Task t6(1, TASK_FOREVER, &flowCallback);
+Task t5(300, TASK_FOREVER, &sendBLECallback);
+Task t6(5, TASK_FOREVER, &flowCallback);
 Task t7(100, TASK_FOREVER, &flowAdder);
 Task t8(2500, TASK_FOREVER, &sendPressureTemp);
 
@@ -68,7 +69,7 @@ float flowTime;
 float flow100;
 int flowCount = 0;
 
-float flowArray[3] = {0, 0, 0};
+float flowArray[4] = {-30, -30, -30, -30};
 int flowAdderCounter = 0;
 
 int counts;
@@ -253,12 +254,17 @@ void readHMECallback(){
 };
 void flowCallback(){
     flowTotal += get_flow();
+    flowCounter++;
 };
 void flowAdder(){
   flowCount = millis() - flowTime;
-  flow100 = flowTotal / flowCount;
-  if (flowAdderCounter < 3){
-    flowArray[flowAdderCounter] = flow100;
+  flow100 = flowTotal / (flowCount / 5);
+  float vol100 = flowTotal / flowCounter;
+
+  vol100 = vol100 / 60000 * flowCount;
+
+  if (flowAdderCounter < 4){
+    flowArray[flowAdderCounter] = vol100;
     flowAdderCounter++;
   }
   else
@@ -266,8 +272,10 @@ void flowAdder(){
     Serial.println("Flow Array overfill");
   }
   
+
   flowTime= millis(); 
   flowTotal = 0;
+  flowCounter = 0;
 };
 
 void readO2Callback(){
@@ -348,18 +356,37 @@ void sendPressureTemp() {
 void sendBLECallback(){
     byte *ob = (byte *)&oxygen;
     byte *cb = (byte *)&co2;
-     
-    byte *fb = (byte *)&flowArray[0];
-    byte *fb1 = (byte *)&flowArray[1];
-    byte *fb2 = (byte *)&flowArray[2];
+    int tracker = 0;
+         
+   byte *fb; 
+   byte *fb1;
+   byte *fb2;
 
-    for (int i = 0; i < 3; i++) {
-      flowArray[i] = 0;
+   float storeTemp = -30;
+    
+  for (int i = 0; i < 4; i++) {
+        if (flowArray[i] != -30) {
+            if (tracker == 0){
+                fb = (byte *)&flowArray[0];           
+            }
+            else if (tracker == 1){
+                fb1 = (byte *)&flowArray[1];  
+            }
+            else if (tracker == 2){
+                fb2 = (byte *)&flowArray[2];
+            }
+            else if (tracker == 3){
+              Serial.println("overflow into 3");
+              storeTemp = flowArray[3];
+            }
+            tracker++;
+        }
     }
-    flowAdderCounter = 0;
 
-    //Serial.println(flowArray[0]);
-    //Serial.println(flowArray[1]);
+    //Serial.println(fb);
+    //Serial.println(fb1);
+    Serial.println(flowArray[2]);
+
 
 
     //Set up oxygen Float
@@ -411,6 +438,20 @@ void sendBLECallback(){
         pCharacteristic->notify();
         //value++; // bluetooth stack will go into congestion, if too many packets are sent, in 6 hours test i was able to go as low as 3ms
     }
+
+    
+    for (int i = 0; i < 4; i++) {
+      flowArray[i] = -30;
+    }
+    if (storeTemp != -30){
+      flowArray[0] = storeTemp;
+      flowAdderCounter = 1;
+    }
+    else
+    {
+      flowAdderCounter = 0;
+    }
+    
 }
 void printSensors(){
       // Convert the value to a char array
@@ -443,7 +484,7 @@ void printSensors(){
 void setupHME(){
   bool status;
 
-  status = bme.begin();
+  status = bme.begin(0x76);
     if (!status) {
         Serial.println("Could not find a valid BME280 sensor, check wiring!");
     }
